@@ -73,35 +73,6 @@ export async function warmupSession(isRotation: boolean = false): Promise<{
       console.log(`[WARMUP] Indonesian IP found! Creating browser...`);
       browser = await createBrowser(sessionId);
 
-      // ── FAST-TRACK HANDOVER ──
-      // If we have a saved session file, we trust it and go LIVE immediately.
-      // This allows the VPS to skip the 'warmup' navigation entirely.
-      if (fs.existsSync(SESSION_PATH)) {
-        console.log(`[WARMUP] Valid session file detected (${SESSION_PATH}). Going LIVE instantly.`);
-        
-        // Ensure we have a Page object for the session manager
-        if (browser && "contexts" in (browser as any)) {
-          const ctx = (browser as unknown as BrowserContext);
-          const pages = ctx.pages();
-          page = pages.length > 0 ? (pages[0] as Page) : await ctx.newPage();
-        } else if (browser) {
-          const b = (browser as unknown as Browser);
-          const contexts = b.contexts();
-          const firstCtx = contexts[0];
-          if (firstCtx) {
-            const pages = firstCtx.pages();
-            page = pages.length > 0 ? (pages[0] as Page) : await firstCtx.newPage();
-          } else {
-            page = await b.newPage();
-          }
-        }
-
-        if (page) {
-          setActiveSession(browser!, sessionId, { stopped: false }, null, page);
-          return { browser: browser!, sessionId };
-        }
-      }
-
       const startHumanize = (): Promise<void> =>
         Humanize(browser!, humanizeStopSignal, sessionId).finally(() => {
           if (!humanizeStopSignal.stopped) {
