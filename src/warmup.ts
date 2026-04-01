@@ -14,11 +14,11 @@ import fs from "fs";
 // Shopee warmup URL
 
 // Create a newly warmed-up session against Shopee
-export async function warmupSession(): Promise<{
+export async function warmupSession(isRotation: boolean = false): Promise<{
   browser: Browser | BrowserContext;
   sessionId: string;
 }> {
-  console.log("[WARMUP] Starting session warmup...");
+  console.log(`[WARMUP] Starting session warmup (Rotation: ${isRotation})...`);
 
   for (let attempt = 1; ; attempt++) {
     const sessionId = generateSessionId();
@@ -26,7 +26,8 @@ export async function warmupSession(): Promise<{
     
     // ── SUPER-FAST HANDOVER ──
     // We check for the session file BEFORE we even create the browser or check IPs.
-    if (fs.existsSync(SESSION_PATH)) {
+    // Skip this if we are intentionally rotating due to a block.
+    if (!isRotation && fs.existsSync(SESSION_PATH)) {
       console.log(`[WARMUP-V2] Saved session found at ${SESSION_PATH}. Jumping to LIVE mode!`);
       const browser = await createBrowser(sessionId);
       let page: Page | null = null;
@@ -555,7 +556,7 @@ export async function rotateSession(): Promise<{
 }> {
   console.log("[WARMUP] Rotating session...");
   await closeActiveSession();
-  return warmupSession();
+  return await warmupSession(true); // Always force fresh navigation on rotation
 }
 
 function delay(ms: number): Promise<void> {

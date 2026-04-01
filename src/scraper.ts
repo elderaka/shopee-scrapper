@@ -106,6 +106,14 @@ export async function searchShopee(keyword: string): Promise<ShopeeProduct[]> {
     console.log(`[SCRAPER] API returned ${items.length} items`);
 
     if (items.length === 0) {
+      console.log(`[SCRAPER] API returned 0 items`);
+      // Saving a screenshot if no items found (helps diagnose shadow-blocks)
+      try {
+        await page.screenshot({ path: "debug_0_results.png", fullPage: true });
+        console.log(`[SCRAPER] Diagnostic screenshot saved: debug_0_results.png`);
+      } catch (screenshotErr) {
+        console.error(`[SCRAPER] Failed to capture debug screenshot:`, screenshotErr);
+      }
       throw new BlockedError('No products found — API returned 0 items', 0, 'connection');
     }
 
