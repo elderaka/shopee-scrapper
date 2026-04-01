@@ -18,6 +18,7 @@ config();
 const PORT = parseInt(process.env.BROWSER_SERVER_PORT || '4444', 10);
 const WS_PATH = process.env.BROWSER_SERVER_PATH || 'camoufox';
 const PROXY_URL = process.env.PROXY_URL || process.env.PROXY || '';
+const MOBILE = process.env.MOBILE === 'true';
 
 console.log('[BROWSER-SERVER] Starting Camoufox remote server...');
 console.log(`[BROWSER-SERVER] Port: ${PORT} | Path: /${WS_PATH}`);
@@ -26,13 +27,16 @@ const serverOptions: any = {
   headless: false,  // Run with visible browser window on your machine
   locale: 'id-ID',
   os: ['windows', 'windows', 'windows', 'macos', 'linux'] as any,
-  screen: {
+  screen: MOBILE ? undefined : {
     minWidth: 1280,
     maxWidth: 1920,
     minHeight: 720,
     maxHeight: 1080,
   },
+  viewport: MOBILE ? { width: 390, height: 844 } : { width: 1280, height: 720 },
   humanize: true,
+  hasTouch: MOBILE,
+  isMobile: MOBILE,
   config: {
     'battery:charging': true,
     'battery:chargingTime': 0,

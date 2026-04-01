@@ -25,6 +25,7 @@ const IP_TEST_URL = process.env.IP_TEST_URL || "http://ipinfo.thordata.com";
 export const SHOPEE_PHONE = process.env.SHOPEE_PHONE || "";
 export const SHOPEE_PASSWORD = process.env.SHOPEE_PASSWORD || "";
 export const CAMOUFOX_WS_URL = process.env.CAMOUFOX_WS_URL || "";
+export const MOBILE = process.env.MOBILE === "true";
 export const SESSION_PATH = "shopee_session.json";
 
 // Proxy configuration
@@ -177,20 +178,28 @@ export async function createBrowser(sessionId: string): Promise<Browser | Browse
   const camoufoxOptions: any = {
     headless: HEADLESS === "true",
 
-    // OS distribution: Windows dominates (~70% real-world traffic)
+    // We keep a Desktop OS fingerprint (consistent and supported) but emulate mobile behaviour.
     os: ["windows", "windows", "windows", "macos", "linux"] as any,
 
     locale: "id-ID",
     geoip: false,
 
-    screen: {
+    // Hardware Screen: We only constrain this for desktop flows.
+    // For mobile flows, we leave it unconstrained so BrowserForge can find 
+    // a valid statistical match for the desktop OS (Windows/Mac/Linux).
+    screen: MOBILE ? undefined : {
       minWidth: 1280,
       maxWidth: 1920,
       minHeight: 720,
       maxHeight: 1080,
     },
 
+    // Viewport: This is what actually triggers the mobile website layout.
+    viewport: MOBILE ? { width: 390, height: 844 } : { width: 1280, height: 720 },
+
     humanize: true,
+    hasTouch: MOBILE, // Enable touch support for mobile profiles
+    isMobile: MOBILE, // Tells the browser to act like a phone
 
     config: {
       "battery:charging": true,

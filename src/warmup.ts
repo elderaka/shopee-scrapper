@@ -13,7 +13,6 @@ import fs from "fs";
 
 // Shopee warmup URL
 
-
 // Create a newly warmed-up session against Shopee
 export async function warmupSession(): Promise<{
   browser: Browser | BrowserContext;
@@ -24,6 +23,11 @@ export async function warmupSession(): Promise<{
   for (let attempt = 1; ; attempt++) {
     const sessionId = generateSessionId();
     console.log(`[WARMUP] Attempt ${attempt} | Session: ${sessionId}`);
+
+    let browser: Browser | BrowserContext | null = null;
+    let page: Page | null = null;
+    const humanizeStopSignal = { stopped: false };
+    let humanizeTask: Promise<void> | null = null;
 
     try {
       // Quick IP check
@@ -39,13 +43,10 @@ export async function warmupSession(): Promise<{
       }
 
       console.log(`[WARMUP] Indonesian IP found! Creating browser...`);
-      const browser = await createBrowser(sessionId);
-
-      const humanizeStopSignal = { stopped: false };
-      let humanizeTask: Promise<void> | null = null;
+      browser = await createBrowser(sessionId);
 
       const startHumanize = (): Promise<void> =>
-        Humanize(browser, humanizeStopSignal, sessionId).finally(() => {
+        Humanize(browser!, humanizeStopSignal, sessionId).finally(() => {
           if (!humanizeStopSignal.stopped) {
             console.log(
               `[Humanization] Restarting humanization for session ${sessionId}`,
@@ -55,7 +56,6 @@ export async function warmupSession(): Promise<{
         });
 
       // Visit Shopee homepage to build trust
-      let page: Page;
       // Try to get the existing blank tab opened by the browser launch
       if ("contexts" in browser) {
         const contexts = browser.contexts();
@@ -72,14 +72,18 @@ export async function warmupSession(): Promise<{
       }
       // ── Step 1: Visit Shopee HOMEPAGE first to build session trust ──
       const HOMEPAGE_URL = "https://shopee.co.id";
-      console.log(`[WARMUP] Visiting Shopee homepage to build trust: ${HOMEPAGE_URL}`);
+      console.log(
+        `[WARMUP] Visiting Shopee homepage to build trust: ${HOMEPAGE_URL}`,
+      );
       try {
         await page.goto(HOMEPAGE_URL, {
           waitUntil: "domcontentloaded",
           timeout: 45000,
         });
       } catch (e: any) {
-        console.log("[WARMUP] Homepage timeout, checking if page is accessible...");
+        console.log(
+          "[WARMUP] Homepage timeout, checking if page is accessible...",
+        );
         try {
           await page.evaluate(() => document.readyState);
         } catch {
@@ -88,145 +92,181 @@ export async function warmupSession(): Promise<{
       }
 
       // ── Step 2: Do light humanization then poll until on /buyer/login ──
-      // The homepage often auto-redirects to login. We just wait for it.
-      console.log("[WARMUP] Waiting for browser to reach login page (up to 30s)...");
+      // ── Step 2: Polling with Visibility ──
+      console.log(
+        "[WARMUP] Waiting for browser to reach login page (up to 30s)...",
+      );
       const maxLoginWaitMs = 30000;
-      const pollIntervalMs = 1000;
+      const pollIntervalMs = 2000;
       let elapsed = 0;
       let onLoginPage = false;
 
-      // Do some mouse movement while we wait
-      const humanizePoll = (async () => {
-        try {
-          await page.mouse.move(300, 400, { steps: 15 });
-          await delay(800);
-          await page.mouse.wheel(0, 200);
-          await delay(1200 + Math.random() * 1500);
-          await page.mouse.move(600, 300, { steps: 12 });
-        } catch { /* ignore if page navigates */ }
-      })();
-
       while (elapsed < maxLoginWaitMs) {
         const currentUrl = page.url();
+        const currentTitle = await page.title().catch(() => "Unknown");
+        console.log(
+          `[WARMUP] Current State | URL: ${currentUrl} | Title: "${currentTitle}"`,
+        );
+
         if (currentUrl.includes("/buyer/login")) {
           onLoginPage = true;
-          console.log(`[WARMUP] Login page detected at ${currentUrl}`);
+          console.log(`[WARMUP] Login page detected!`);
           break;
         }
+
+        // Take a debug screenshot every 10s if we're still waiting
+        if (elapsed % 10000 === 0 && elapsed > 0) {
+          console.log(
+            "[WARMUP] Taking diagnostic screenshot: debug_warmup.png",
+          );
+          await page
+            .screenshot({ path: "debug_warmup.png", fullPage: true })
+            .catch(() => {});
+        }
+
         await delay(pollIntervalMs);
         elapsed += pollIntervalMs;
       }
-      await humanizePoll.catch(() => {});
 
       if (!onLoginPage) {
-        console.log("[WARMUP] Not redirected automatically, navigating to login page manually...");
+        console.log(
+          "[WARMUP] Auto-redirect failed. Forcing navigation to login page...",
+        );
         try {
           await page.goto("https://shopee.co.id/buyer/login", {
             waitUntil: "domcontentloaded",
-            timeout: 45000,
+            timeout: 60000,
           });
+          await page
+            .screenshot({ path: "debug_manual_nav.png" })
+            .catch(() => {});
         } catch (e: any) {
-          console.log("[WARMUP] Login page timeout, continuing...");
-          try { await page.evaluate(() => document.readyState); } catch { throw e; }
+          console.log(
+            `[WARMUP] Manual navigation failed: ${e.message}. Saving debug_failed_nav.png`,
+          );
+          await page
+            .screenshot({ path: "debug_failed_nav.png" })
+            .catch(() => {});
         }
       }
 
-      // ── Step 3: Now on login page — handle Bahasa modal ──
-      console.log("[WARMUP] On login page. Waiting 10 seconds for Bahasa modal...");
-      await delay(10000);
-      try {
-        let modalRetries = 0;
-        const maxModalRetries = 5;
-
-        while (modalRetries < maxModalRetries) {
-          const modalExists = await page.evaluate(() => {
-            const headerText = "Pilih bahasa Anda";
-            const btnText = "Bahasa Indonesia";
-            const hasHeader = Array.from(document.querySelectorAll('*')).some(el => el.textContent?.includes(headerText));
-            const hasBtn = Array.from(document.querySelectorAll('button, div')).some(el => el.textContent?.trim() === btnText || el.classList.contains('vsIIDR'));
-            return hasHeader || hasBtn;
-          }).catch(() => false);
-
-          if (!modalExists) {
-            if (modalRetries > 0) console.log("[WARMUP] Bahasa modal cleared.");
-            break;
-          }
-
-          console.log(`[WARMUP] Bahasa modal detected (Attempt ${modalRetries + 1}). Clicking...`);
-          const clicked = await page.evaluate(() => {
-            const btn = document.querySelector('button.vsIIDR') as HTMLElement ||
-                        Array.from(document.querySelectorAll('button, div')).find(el => el.textContent?.trim() === "Bahasa Indonesia") as HTMLElement;
-            if (btn) { btn.click(); return true; }
-            return false;
-          }).catch(() => false);
-
-          if (clicked) {
-            await delay(2000);
-          } else {
-            console.log("[WARMUP] Could not find click target in modal.");
-            break;
-          }
-          modalRetries++;
-        }
-      } catch (err: any) {
-        console.log(`[WARMUP] Error handling Bahasa modal: ${err.message}`);
-      }
-      await delay(2000);
-
-      // Check if we landed on a real Shopee page (not a block page)
-      let title = await page.title();
+      // ── Step 3: Fast Proactive Modal & Login Search ──
       console.log(
-        `[WARMUP] Initial Page title: "${title}" | URL: ${page.url()}`,
+        "[WARMUP] On login page. Proactively checking for Modal or Login Form...",
       );
 
-      if (
-        title.toLowerCase().includes("captcha") ||
-        title.toLowerCase().includes("verify") ||
-        title.toLowerCase().includes("blocked")
-      ) {
-        console.log(`[WARMUP] Session appears blocked right away, retrying...`);
-        humanizeStopSignal.stopped = true;
-        await page.close();
-        await browser.close();
-        await delay(2000);
-        continue;
+      let phaseDetected: "modal" | "login" | "none" = "none";
+      let checkElapsed = 0;
+      const maxCheckMs = 15000; // max total wait
+
+      while (checkElapsed < maxCheckMs) {
+        const currentUrl = page.url();
+        const currentTitle = await page.title().catch(() => "Unknown");
+
+        // Immediate Antibot Check
+        if (
+          currentUrl.includes("captcha") ||
+          currentTitle.toLowerCase().includes("captcha") ||
+          currentTitle.toLowerCase().includes("blocked") ||
+          currentTitle.toLowerCase().includes("access denied")
+        ) {
+          console.log(
+            `[WARMUP] Antibot detected! (Title: "${currentTitle}", URL: ${currentUrl}). Restarting session...`,
+          );
+          throw new Error("AntibotBlock");
+        }
+
+        phaseDetected = (await page
+          .evaluate(() => {
+            // Check for login form first (priority)
+            if (document.querySelector('input[name="loginKey"]'))
+              return "login";
+
+            // Check for Bahasa modal
+            const headerText = "Pilih bahasa Anda";
+            const btnText = "Bahasa Indonesia";
+            const searchable = Array.from(
+              document.querySelectorAll("button, div, p, span, h1, h2, h3"),
+            );
+            const hasHeader = searchable.some((el) =>
+              el.textContent?.includes(headerText),
+            );
+            const hasBtn = searchable.some(
+              (el) =>
+                el.textContent?.trim() === btnText ||
+                el.classList.contains("vsIIDR"),
+            );
+            if (hasHeader || hasBtn) return "modal";
+
+            return "none";
+          })
+          .catch(() => "none")) as any;
+
+        if (phaseDetected !== "none") break;
+        await delay(1000);
+        checkElapsed += 1000;
+
+        if (checkElapsed % 5000 === 0) {
+          console.log(`[WARMUP] Still polling... State: "${currentTitle}"`);
+        }
       }
 
-      console.log(`[WARMUP] Login Page title: "${title}"`);
+      // Handle Modal if detected
+      if (phaseDetected === "modal") {
+        console.log("[WARMUP] Bahasa modal detected. Clicking...");
+        const clicked = await page
+          .evaluate(() => {
+            const btn =
+              (document.querySelector("button.vsIIDR") as HTMLElement) ||
+              (Array.from(
+                document.querySelectorAll("button, div, p, span"),
+              ).find(
+                (el) => el.textContent?.trim() === "Bahasa Indonesia",
+              ) as HTMLElement);
+            if (btn) {
+              btn.click();
+              return true;
+            }
+            return false;
+          })
+          .catch(() => false);
+        if (clicked) {
+          console.log("[WARMUP] Clicked Bahasa Indonesia. Waiting 2s...");
+          await delay(2000);
+        }
+      }
 
-      // Fill in credentials if provided
+      // ── Step 3b: Fill in credentials ──
       if (SHOPEE_PHONE && SHOPEE_PASSWORD) {
         console.log(
-          `[WARMUP] Filling login credentials for ${SHOPEE_PHONE}...`,
+          `[WARMUP] Preparing to fill credentials for ${SHOPEE_PHONE}...`,
         );
 
         try {
-          // Wait for login form
+          // Final check for the form
           await page.waitForSelector('input[name="loginKey"]', {
-            timeout: 30000,
+            timeout: 15000,
           });
 
-          // Type phone number with human-like cadence
+          console.log("[WARMUP] Typing phone number...");
           await humanType(page, 'input[name="loginKey"]', SHOPEE_PHONE);
-          await delay(500);
+          await delay(300);
 
-          // Press Tab to go to Password field (User request)
-          console.log("[WARMUP] Pressing Tab to reach password field...");
+          console.log("[WARMUP] Tabbing to password...");
           await page.keyboard.press("Tab");
-          await delay(500);
+          await delay(300);
 
-          // Type password with human-like cadence
+          console.log("[WARMUP] Typing password...");
           await humanType(page, 'input[name="password"]', SHOPEE_PASSWORD);
-          await delay(1000);
+          await delay(800);
 
-          // Press Enter instead of clicking login button (which might be covered by modals)
-          console.log("[WARMUP] Pressing Enter to Log In...");
+          console.log("[WARMUP] Submitting login (Enter)...");
           await page.keyboard.press("Enter");
 
-          // Wait to see what happens next (captcha, verification, or success)
-          // User suggested adding more delay because it's still loading
-          console.log("[WARMUP] Waiting 10 seconds for redirect/verification page...");
-          await delay(10000);
+          console.log(
+            "[WARMUP] Login submitted. Waiting for redirect/verification...",
+          );
+          await delay(8000); // Wait for potential verification link page
 
           // 2.5 Handle Captcha
           let currentUrl = page.url();
@@ -255,14 +295,16 @@ export async function warmupSession(): Promise<{
           // 3. Handle Security Verification
           currentUrl = page.url();
           const pageContent = await page.content();
-          
+
           if (
             currentUrl.includes("/verify/") ||
             pageContent.includes("Untuk keamanan akun") ||
             pageContent.includes("pemeriksaan keamanan") ||
             pageContent.includes("Verifikasi")
           ) {
-            console.log(`[WARMUP] Security verification prompt detected at ${currentUrl}!`);
+            console.log(
+              `[WARMUP] Security verification prompt detected at ${currentUrl}!`,
+            );
 
             try {
               // Click "Verifikasi melalui token" or similar
@@ -271,7 +313,7 @@ export async function warmupSession(): Promise<{
                 'button:has-text("token"), button:has-text("Token"), [class*="verif"]:has-text("token"), :has-text("Verifikasi melalui token")',
                 { timeout: 8000 },
               );
-              
+
               if (verifyBtn) {
                 console.log("[WARMUP] Scrolling to verification button...");
                 await verifyBtn.scrollIntoViewIfNeeded();
@@ -283,18 +325,31 @@ export async function warmupSession(): Promise<{
 
                 // Look for an 'OK' button that might appear after clicking the link button
                 try {
-                  console.log("[WARMUP] Checking for confirmation modal (OK button)...");
-                  
+                  console.log(
+                    "[WARMUP] Checking for confirmation modal (OK button)...",
+                  );
+
                   // Wait up to 10s for the modal context or the button itself
                   const okButtonClicked = await page.evaluate(async () => {
                     // Helper to find OK-ish buttons
                     const findOkBtn = () => {
-                      const selectors = ['button', 'div[role="button"]', '[class*="button"]'];
+                      const selectors = [
+                        "button",
+                        'div[role="button"]',
+                        '[class*="button"]',
+                      ];
                       for (const selector of selectors) {
-                        const elements = Array.from(document.querySelectorAll(selector));
-                        const btn = elements.find(el => {
+                        const elements = Array.from(
+                          document.querySelectorAll(selector),
+                        );
+                        const btn = elements.find((el) => {
                           const text = el.textContent?.trim().toUpperCase();
-                          return text === "OK" || text === "OKE" || text === "SAYA MENGERTI" || text === "LANJUT";
+                          return (
+                            text === "OK" ||
+                            text === "OKE" ||
+                            text === "SAYA MENGERTI" ||
+                            text === "LANJUT"
+                          );
                         });
                         if (btn) return btn as HTMLElement;
                       }
@@ -318,7 +373,8 @@ export async function warmupSession(): Promise<{
                           clearInterval(interval);
                           resolve(true);
                         }
-                        if (checks++ > 20) { // 5 seconds total
+                        if (checks++ > 20) {
+                          // 5 seconds total
                           clearInterval(interval);
                           resolve(false);
                         }
@@ -330,7 +386,9 @@ export async function warmupSession(): Promise<{
                     console.log("[WARMUP] OK button clicked via JS!");
                     await delay(2000);
                   } else {
-                    console.log("[WARMUP] OK button not detected or not clickable.");
+                    console.log(
+                      "[WARMUP] OK button not detected or not clickable.",
+                    );
                   }
                 } catch (e) {
                   console.log("[WARMUP] Error during OK button handling.");
@@ -388,14 +446,16 @@ export async function warmupSession(): Promise<{
         } else {
           ctx = browser as unknown as BrowserContext;
         }
-        
+
         if (ctx) {
           const state = await ctx.storageState();
           fs.writeFileSync(SESSION_PATH, JSON.stringify(state, null, 2));
           console.log(`[WARMUP] Session state saved to ${SESSION_PATH}`);
         }
       } catch (saveErr: any) {
-        console.log(`[WARMUP] Warning: Could not save storageState: ${saveErr.message}`);
+        console.log(
+          `[WARMUP] Warning: Could not save storageState: ${saveErr.message}`,
+        );
       }
 
       // Start humanization only AFTER all the fragile login clicking is done
@@ -410,7 +470,22 @@ export async function warmupSession(): Promise<{
       );
       return { browser, sessionId };
     } catch (error: any) {
-      console.log(`[WARMUP] Error: ${error.message}`);
+      if (error.message === "AntibotBlock") {
+        console.log(
+          "[WARMUP] Session burned by antibot. Retrying immediately with a fresh session...",
+        );
+      } else {
+        console.log(`[WARMUP] Error: ${error.message}`);
+      }
+
+      humanizeStopSignal.stopped = true;
+      try {
+        if (page) await page.close();
+        if (browser) await browser.close();
+      } catch {}
+
+      await delay(3000); // Cooling off
+      continue;
     }
 
     await delay(2000);
@@ -432,7 +507,11 @@ function delay(ms: number): Promise<void> {
 }
 
 // Emulates a human typing by randomizing the delay between keystrokes
-async function humanType(page: Page, selector: string, text: string): Promise<void> {
+async function humanType(
+  page: Page,
+  selector: string,
+  text: string,
+): Promise<void> {
   const el = await page.$(selector);
   if (el) {
     await el.focus();
