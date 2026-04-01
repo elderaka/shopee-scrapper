@@ -31,20 +31,17 @@ export async function warmupSession(): Promise<{
       const browser = await createBrowser(sessionId);
       let page: Page | null = null;
       
-      if (browser && "contexts" in (browser as any)) {
+      // Safety: Correctly handle both Browser and BrowserContext return types
+      if (browser && typeof (browser as any).contexts === 'function') {
+        const b = (browser as unknown as Browser);
+        const contexts = b.contexts();
+        const firstCtx = contexts.length > 0 ? (contexts[0] as BrowserContext) : await b.newContext();
+        const pages = firstCtx.pages();
+        page = pages.length > 0 ? (pages[0] as Page) : await firstCtx.newPage();
+      } else if (browser) {
         const ctx = (browser as unknown as BrowserContext);
         const pages = ctx.pages();
         page = pages.length > 0 ? (pages[0] as Page) : await ctx.newPage();
-      } else if (browser) {
-        const b = (browser as unknown as Browser);
-        const contexts = b.contexts();
-        const firstCtx = contexts[0];
-        if (firstCtx) {
-          const pages = firstCtx.pages();
-          page = pages.length > 0 ? (pages[0] as Page) : await firstCtx.newPage();
-        } else {
-          page = await b.newPage();
-        }
       }
 
       if (page) {
