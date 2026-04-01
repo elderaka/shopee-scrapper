@@ -1,0 +1,41 @@
+{
+  "name": "shopee-scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "node --no-warnings --loader ts-node/esm src/server.ts",
+    "browser-server": "node --no-warnings --loader ts-node/esm src/browser-server.ts",
+    "test:load": "npm run build && node dist/load-test.js",
+    "test:quick": "npm run build && node dist/load-test.js --duration=5 --concurrency=10"
+  },
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@playwright/test": "^1.58.1",
+    "camoufox-js": "^0.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "http-proxy-agent": "^7.0.2",
+    "https-proxy-agent": "^7.0.6",
+    "playwright": "^1.58.1",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "socks-proxy-agent": "^8.0.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.2.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
