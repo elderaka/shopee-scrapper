@@ -162,17 +162,20 @@ export async function checkIP(sessionId: string): Promise<{ ip: string; country:
 export async function createBrowser(sessionId: string): Promise<Browser | BrowserContext> {
   console.log(`[CAMOUFOX] Session ID: ${sessionId}`);
 
-  // ── Remote mode: connect to the browser-server running on local machine ──
-  if (CAMOUFOX_WS_URL) {
-    console.log(`[CAMOUFOX] Remote mode — connecting to: ${CAMOUFOX_WS_URL}`);
+  // ── Smart Mode: Only use remote connection if we DON'T have a session yet ──
+  // This allows the VPS to "handover" the session to itself once logged in.
+  const sessionExists = fs.existsSync(SESSION_PATH);
+  
+  if (CAMOUFOX_WS_URL && !sessionExists) {
+    console.log(`[CAMOUFOX] Remote login mode — connecting to help machine: ${CAMOUFOX_WS_URL}`);
     const startTime = Date.now();
     try {
-      const browser = await firefox.connect(CAMOUFOX_WS_URL);
+      const browser = await firefox.connect(CAMOUFOX_WS_URL, { timeout: 30000 });
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      console.log(`[CAMOUFOX] Connected to remote browser in ${elapsed}s`);
+      console.log(`[CAMOUFOX] Successfully connected to helper browser in ${elapsed}s`);
       return browser;
     } catch (err: any) {
-      throw new Error(`[CAMOUFOX] Failed to connect to remote browser at ${CAMOUFOX_WS_URL}: ${err.message}`);
+      console.error(`[CAMOUFOX] Failed to connect to helper machine! Retrying locally...`);
     }
   }
 
