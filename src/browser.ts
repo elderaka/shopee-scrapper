@@ -26,7 +26,9 @@ export const SHOPEE_PHONE = process.env.SHOPEE_PHONE || "";
 export const SHOPEE_PASSWORD = process.env.SHOPEE_PASSWORD || "";
 export const CAMOUFOX_WS_URL = process.env.CAMOUFOX_WS_URL || "";
 export const MOBILE = process.env.MOBILE === "true";
-export const SESSION_PATH = "shopee_session.json";
+export const SESSION_PATH = path.resolve(process.cwd(), "shopee_session.json");
+
+console.log(`[SESSION] Target path: ${SESSION_PATH}`);
 
 // Proxy configuration
 let server = "";
