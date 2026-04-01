@@ -8,6 +8,8 @@ import {
 } from "./browser.js";
 import { Humanize } from "./humanization.js";
 import { setActiveSession, closeActiveSession } from "./session.js";
+import { SESSION_PATH } from "./browser.js";
+import fs from "fs";
 
 // Shopee warmup URL
 
@@ -377,6 +379,24 @@ export async function warmupSession(): Promise<{
       }
 
       console.log(`[WARMUP] Login flow complete. Session ready!`);
+
+      // ── Step 4: Save the storageState (Handover to VPS or next run) ──
+      try {
+        let ctx: BrowserContext;
+        if ("contexts" in browser) {
+          ctx = browser.contexts()[0] as BrowserContext;
+        } else {
+          ctx = browser as unknown as BrowserContext;
+        }
+        
+        if (ctx) {
+          const state = await ctx.storageState();
+          fs.writeFileSync(SESSION_PATH, JSON.stringify(state, null, 2));
+          console.log(`[WARMUP] Session state saved to ${SESSION_PATH}`);
+        }
+      } catch (saveErr: any) {
+        console.log(`[WARMUP] Warning: Could not save storageState: ${saveErr.message}`);
+      }
 
       // Start humanization only AFTER all the fragile login clicking is done
       console.log("[WARMUP] Starting humanization...");

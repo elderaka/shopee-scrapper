@@ -6,6 +6,8 @@ import https from "https";
 import { config } from "dotenv";
 import { HttpProxyAgent } from "http-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
+import fs from "fs";
+import path from "path";
 
 //Error for proxy authentication failures
 export class ProxyAuthError extends Error {
@@ -23,6 +25,7 @@ const IP_TEST_URL = process.env.IP_TEST_URL || "http://ipinfo.thordata.com";
 export const SHOPEE_PHONE = process.env.SHOPEE_PHONE || "";
 export const SHOPEE_PASSWORD = process.env.SHOPEE_PASSWORD || "";
 export const CAMOUFOX_WS_URL = process.env.CAMOUFOX_WS_URL || "";
+export const SESSION_PATH = "shopee_session.json";
 
 // Proxy configuration
 let server = "";
@@ -199,6 +202,12 @@ export async function createBrowser(sessionId: string): Promise<Browser | Browse
     persistent_context: false,
     ignore_https_errors: true,
   };
+
+  // ── Session Handover: Load existing session if available ──
+  if (fs.existsSync(SESSION_PATH)) {
+    console.log(`[CAMOUFOX] Found existing session file: ${SESSION_PATH}. Loading storageState...`);
+    camoufoxOptions.storageState = SESSION_PATH;
+  }
 
   if (hasProxy) {
     const PROXY_USERNAME = withSessionUsername(username || "", sessionId);
