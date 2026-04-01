@@ -48,5 +48,7 @@ tmp/
 # Optional npm cache directory
 .npm
 
-# Optional eslint cache
-.eslintcache
+# Captured Sessions & Debugging
+shopee_session.json
+debug_*.png
+*.png

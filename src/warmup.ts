@@ -22,7 +22,37 @@ export async function warmupSession(): Promise<{
 
   for (let attempt = 1; ; attempt++) {
     const sessionId = generateSessionId();
-    console.log(`[WARMUP] Attempt ${attempt} | Session: ${sessionId}`);
+    console.log(`[WARMUP-V2] Attempt ${attempt} | Session: ${sessionId}`);
+    
+    // ── SUPER-FAST HANDOVER ──
+    // We check for the session file BEFORE we even create the browser or check IPs.
+    if (fs.existsSync(SESSION_PATH)) {
+      console.log(`[WARMUP-V2] Saved session found at ${SESSION_PATH}. Jumping to LIVE mode!`);
+      const browser = await createBrowser(sessionId);
+      let page: Page | null = null;
+      
+      if (browser && "contexts" in (browser as any)) {
+        const ctx = (browser as unknown as BrowserContext);
+        const pages = ctx.pages();
+        page = pages.length > 0 ? (pages[0] as Page) : await ctx.newPage();
+      } else if (browser) {
+        const b = (browser as unknown as Browser);
+        const contexts = b.contexts();
+        const firstCtx = contexts[0];
+        if (firstCtx) {
+          const pages = firstCtx.pages();
+          page = pages.length > 0 ? (pages[0] as Page) : await firstCtx.newPage();
+        } else {
+          page = await b.newPage();
+        }
+      }
+
+      if (page) {
+        setActiveSession(browser!, sessionId, { stopped: false }, null, page);
+        console.log("[SERVER-V2] Session handover complete. Ready for searches.");
+        return { browser: browser!, sessionId };
+      }
+    }
 
     let browser: Browser | BrowserContext | null = null;
     let page: Page | null = null;
